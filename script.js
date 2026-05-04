@@ -12,15 +12,19 @@ const MAX_CACHE_SIZE = 30;
 const MAX_PARALLEL_DECODES = 4;
 const PRELOAD_AHEAD = 18;
 const PRELOAD_BEHIND = 8;
+const PNG_CACHE_SIZE = 22;
+const PNG_PARALLEL_DECODES = 2;
+const PNG_PRELOAD_AHEAD = 10;
+const PNG_PRELOAD_BEHIND = 4;
 const MOBILE_BREAKPOINT = 768;
 const SEQUENCES = {
   desktop: "./pt-x_1.json",
   mobile: "./pt-x_1-mobile.json",
 };
-const SEQUENCE3_FRAME_COUNT = 151;
+const SEQUENCE3_FRAME_COUNT = 90;
 const SEQUENCE3_FRAMES = Array.from(
   { length: SEQUENCE3_FRAME_COUNT },
-  (_, index) => `./assets/sequence3/frame-${String(index).padStart(4, "0")}.png`,
+  (_, index) => `./assets/sequence3-new2/frame-${String(index).padStart(4, "0")}.png`,
 );
 
 let timeline = [];
@@ -711,9 +715,10 @@ const sequence2Controller = createScrollSequence({
 });
 
 function createPngScrollSequence({ storyElement, canvasElement, frameSources }) {
-  const canvasContext = canvasElement.getContext("2d", { alpha: true });
+  const canvasContext = canvasElement.getContext("2d", { alpha: true, desynchronized: true });
   const frames = frameSources.map((src, index) => ({
     id: `sequence3:${index}`,
+    index,
     sequence: "sequence3",
     src,
   }));
@@ -747,7 +752,7 @@ function createPngScrollSequence({ storyElement, canvasElement, frameSources }) 
 
   function resize() {
     const rect = canvasElement.getBoundingClientRect();
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const ratio = Math.min(window.devicePixelRatio || 1, isMobileViewport() ? 1.1 : 1.25);
     const width = Math.max(1, Math.round(rect.width * ratio));
     const height = Math.max(1, Math.round(rect.height * ratio));
 
@@ -770,6 +775,8 @@ function createPngScrollSequence({ storyElement, canvasElement, frameSources }) 
     const y = (outputHeight - height) * 0.5;
 
     canvasContext.clearRect(0, 0, outputWidth, outputHeight);
+    canvasContext.imageSmoothingEnabled = true;
+    canvasContext.imageSmoothingQuality = "medium";
     canvasContext.drawImage(drawable, x, y, width, height);
   }
 
@@ -790,10 +797,10 @@ function createPngScrollSequence({ storyElement, canvasElement, frameSources }) 
   }
 
   function prune() {
-    if (imageCache.size <= MAX_CACHE_SIZE) return;
+    if (imageCache.size <= PNG_CACHE_SIZE) return;
 
     const protectedIds = new Set([activeId]);
-    for (let offset = -PRELOAD_BEHIND; offset <= PRELOAD_AHEAD; offset += 1) {
+    for (let offset = -PNG_PRELOAD_BEHIND; offset <= PNG_PRELOAD_AHEAD; offset += 1) {
       const frame = frames[activeIndex + offset * scrollDirection];
       if (frame) protectedIds.add(frame.id);
     }
@@ -801,7 +808,7 @@ function createPngScrollSequence({ storyElement, canvasElement, frameSources }) 
     [...imageCache.entries()]
       .filter(([id]) => !protectedIds.has(id))
       .sort((a, b) => a[1].lastUsed - b[1].lastUsed)
-      .slice(0, imageCache.size - MAX_CACHE_SIZE)
+      .slice(0, imageCache.size - PNG_CACHE_SIZE)
       .forEach(([id, entry]) => {
         entry.close?.();
         if (entry === lastEntry) {
@@ -811,8 +818,15 @@ function createPngScrollSequence({ storyElement, canvasElement, frameSources }) 
       });
   }
 
+  function trimQueue(frameIndex) {
+    const minIndex = Math.max(0, frameIndex - PNG_PRELOAD_BEHIND - 2);
+    const maxIndex = Math.min(frames.length - 1, frameIndex + PNG_PRELOAD_AHEAD + 2);
+    imageQueue = imageQueue.filter(({ frame }) => frame.index >= minIndex && frame.index <= maxIndex);
+    queuedImages = new Set(imageQueue.map(({ frame }) => frame.id));
+  }
+
   function pumpQueue() {
-    while (activeImageLoads < MAX_PARALLEL_DECODES && imageQueue.length) {
+    while (activeImageLoads < PNG_PARALLEL_DECODES && imageQueue.length) {
       const { frame } = imageQueue.shift();
       queuedImages.delete(frame.id);
       activeImageLoads += 1;
@@ -860,14 +874,14 @@ function createPngScrollSequence({ storyElement, canvasElement, frameSources }) 
   function preload(frameIndex) {
     const forward = scrollDirection >= 0;
 
-    for (let offset = 0; offset <= PRELOAD_AHEAD; offset += 1) {
+    for (let offset = 0; offset <= PNG_PRELOAD_AHEAD; offset += 1) {
       const frame = frames[frameIndex + (forward ? offset : -offset)];
       if (frame) requestImage(frame, offset);
     }
 
-    for (let offset = 1; offset <= PRELOAD_BEHIND; offset += 1) {
+    for (let offset = 1; offset <= PNG_PRELOAD_BEHIND; offset += 1) {
       const frame = frames[frameIndex + (forward ? -offset : offset)];
-      if (frame) requestImage(frame, PRELOAD_AHEAD + offset);
+      if (frame) requestImage(frame, PNG_PRELOAD_AHEAD + offset);
     }
   }
 
@@ -878,6 +892,7 @@ function createPngScrollSequence({ storyElement, canvasElement, frameSources }) 
     activeIndex = nextIndex;
     const frame = frames[nextIndex];
     activeId = frame.id;
+    trimQueue(nextIndex);
 
     if (imageCache.has(frame.id)) {
       draw();

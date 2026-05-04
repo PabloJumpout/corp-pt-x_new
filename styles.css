@@ -705,7 +705,7 @@ body.is-light-theme .dark-action:hover {
   background: transparent;
   color: #05070c;
   margin-top: clamp(-170px, -9vh, -80px);
-  padding: clamp(16px, 2.5vw, 36px) var(--page-pad) clamp(68px, 6vw, 96px);
+  padding: clamp(96px, 7vw, 150px) var(--page-pad) clamp(68px, 6vw, 96px);
 }
 
 .solution-inner {
